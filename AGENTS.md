@@ -35,3 +35,13 @@ Read-only GitHub operations are allowed unless the user explicitly forbids GitHu
 - `gh api` with `GET`
 
 Before any GitHub write operation, show the exact command and target repository, branch, PR, issue, release, or workflow, then wait for explicit user approval.
+
+# Pull Request Policy
+
+When creating pull requests, use GitHub CLI (`gh pr create`) rather than PR-creation tools such as `make_pr`.
+
+Because `gh pr create` is a GitHub write operation, do not run it unless the user explicitly approves PR creation in the current conversation.
+
+Before running `gh pr create`, show the exact command, target repository, source branch, base branch, PR title, and PR body summary, then wait for explicit user approval.
+
+If PR creation is not approved, provide the proposed PR title and body in the final response instead of invoking any PR creation tool.
