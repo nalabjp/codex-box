@@ -1,3 +1,11 @@
+# Do not persist GitHub credentials in files. Codex secrets are setup-only, so
+# configure Git to ask gh for credentials and require GITHUB_TOKEN to be provided
+# as an environment variable for both setup and agent phases.
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "GITHUB_TOKEN must be provided as an environment variable." >&2
+  exit 1
+fi
+
 # common tools install
 (type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget -y)) \
   && sudo mkdir -p -m 755 /etc/apt/keyrings \
@@ -9,61 +17,9 @@
   && sudo apt update \
   && sudo apt install gh -y
 
-export DEBIAN_FRONTEND=noninteractive
-
 # Git credential
-LATEST_TAG=$(curl -fsSL https://api.github.com/repos/git-ecosystem/git-credential-manager/releases/latest \
-  | jq -r .tag_name)
-
-VERSION="${LATEST_TAG#v}"
-DEB="gcm-linux-x64-${VERSION}.deb"
-
-curl -fsSL -o "/tmp/$DEB" \
-  "https://github.com/git-ecosystem/git-credential-manager/releases/download/${LATEST_TAG}/${DEB}"
-# 依存関係込みで .deb を入れる
-sudo apt-get install -y "/tmp/${DEB}"
-
-sudo apt-get update
-sudo apt-get install -y gnupg pass
-
-git config --global credential.helper manager
-git config --global credential.credentialStore gpg
-
-gpg --batch --generate-key <<EOF
-Key-Type: RSA
-Key-Length: 3072
-Subkey-Type: RSA
-Subkey-Length: 3072
-Name-Real: Codex Git Credential
-Name-Email: codex@example.invalid
-Expire-Date: 0
-%no-protection
-%commit
-EOF
-
-KEY_ID="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ { print $5; exit }')"
-pass init "$KEY_ID"
-
-# git credential に必要
-export GPG_TTY=$(tty || echo /dev/null)
-export GPG_BATCH=1
-
-# agentフェーズでも必要になるかもなのでprofile.dに書き出しておく
-cat > /etc/profile.d/gpg.sh <<EOF
-if tty -s; then
-  export GPG_TTY=$(tty)
-fi
-
-export GPG_BATCH=1
-export GPG_PINENTRY_MODE=loopback
-EOF
-
-git credential approve <<EOF
-protocol=https
-host=github.com
-username=x-access-token
-password=${GITHUB_TOKEN}
-EOF
+gh auth status -h github.com >/dev/null
+gh auth setup-git --hostname github.com --force
 
 # Git remote & config
 git remote remove origin 2>/dev/null || true
@@ -71,8 +27,25 @@ git remote add origin https://github.com/${GITHUB_REPO}
 git config --global user.name nalabjp
 git config --global user.email nalabjp@gmail.com
 
-# bundler
-bundle config set --global github.com x-access-token:${GITHUB_TOKEN}
+# Bundler GitHub credentials
+# Do not write the token to Bundler config. Login shells derive Bundler's
+# GitHub credential from the runtime GITHUB_TOKEN environment variable.
+BUNDLER_GITHUB_RC="${HOME}/.bashrc"
+touch "$BUNDLER_GITHUB_RC"
+sed -i '/# >>> codex-box bundler github >>>/,/# <<< codex-box bundler github <<</d' "$BUNDLER_GITHUB_RC"
+cat >> "$BUNDLER_GITHUB_RC" <<'EOF'
+# >>> codex-box bundler github >>>
+if [ -n "${GITHUB_TOKEN:-}" ] && [ -z "${BUNDLE_GITHUB__COM:-}" ]; then
+  export BUNDLE_GITHUB__COM="x-access-token:${GITHUB_TOKEN}"
+fi
+# <<< codex-box bundler github <<<
+EOF
+
+if [ -z "${BUNDLE_GITHUB__COM:-}" ]; then
+  export BUNDLE_GITHUB__COM="x-access-token:${GITHUB_TOKEN}"
+fi
+
+# bundler config
 bundle config set path vendor/bundle
 bundle config set without 'production'
 
@@ -104,7 +77,3 @@ if [ -d skills/custom ]; then
 else
   echo "Skipping local custom Codex skills: skills/custom is not present in $(pwd)." >&2
 fi
-
-cat > /etc/profile.d/github.sh <<EOF
- export GITHUB_TOKEN=${GITHUB_TOKEN}
-EOF

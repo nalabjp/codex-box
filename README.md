@@ -7,6 +7,7 @@
 | Key | Value |
 | --- | --- |
 | GITHUB_REPO | [owner/repo] |
+| GITHUB_TOKEN | PAT |
 
 ### Setup script
 
