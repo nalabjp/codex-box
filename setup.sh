@@ -33,13 +33,13 @@ git config --global user.email nalabjp@gmail.com
 BUNDLER_GITHUB_RC="${HOME}/.bashrc"
 touch "$BUNDLER_GITHUB_RC"
 sed -i '/# >>> codex-box bundler github >>>/,/# <<< codex-box bundler github <<</d' "$BUNDLER_GITHUB_RC"
-cat >> "$BUNDLER_GITHUB_RC" <<'EOF'
+cat >> "$BUNDLER_GITHUB_RC" <<'EOF_BUNDLER_GITHUB'
 # >>> codex-box bundler github >>>
 if [ -n "${GITHUB_TOKEN:-}" ] && [ -z "${BUNDLE_GITHUB__COM:-}" ]; then
   export BUNDLE_GITHUB__COM="x-access-token:${GITHUB_TOKEN}"
 fi
 # <<< codex-box bundler github <<<
-EOF
+EOF_BUNDLER_GITHUB
 
 if [ -z "${BUNDLE_GITHUB__COM:-}" ]; then
   export BUNDLE_GITHUB__COM="x-access-token:${GITHUB_TOKEN}"
@@ -49,10 +49,24 @@ fi
 bundle config set path vendor/bundle
 bundle config set without 'production'
 
+# codex-box shared agent assets
+CODEX_BOX_REPO="${CODEX_BOX_REPO:-nalabjp/codex-box}"
+CODEX_BOX_REF="${CODEX_BOX_REF:-HEAD}"
+CODEX_BOX_RAW_BASE="https://raw.githubusercontent.com/${CODEX_BOX_REPO}/${CODEX_BOX_REF}"
+CODEX_WORKSPACE_DIR="${CODEX_WORKSPACE_DIR:-$(dirname "$(pwd)")}"
+
+# Place repository-independent agent instructions above the checked-out repo so
+# they apply to all Codex workspaces in the same environment. If that directory
+# is unavailable, fall back to the home tree.
+if [ -d "$CODEX_WORKSPACE_DIR" ] && [ -w "$CODEX_WORKSPACE_DIR" ]; then
+  curl -fsSL -o "${CODEX_WORKSPACE_DIR}/AGENTS.md" "${CODEX_BOX_RAW_BASE}/AGENTS.md"
+else
+  curl -fsSL -o "${HOME}/AGENTS.md" "${CODEX_BOX_RAW_BASE}/AGENTS.md"
+fi
+
 # Codex skills
-# Install OSS and local custom skills at Codex user scope. For Codex this resolves
-# to ~/.codex/skills, keeping skills available across repositories while this
-# repo remains the version-controlled source for custom skill definitions.
+# Install OSS and codex-box custom skills at Codex user scope. For Codex this
+# resolves to ~/.codex/skills, keeping skills available across repositories.
 install_codex_skill() {
   gh skill install "$@" --agent codex --scope user --force
 }
@@ -68,12 +82,21 @@ install_codex_skill opensite-ai/opensite-skills sidekiq-job-patterns
 
 install_codex_skill win4r/goal-prompt-builder goal-prompt-builder
 
-# Local custom skills maintained in this repository.
-if [ -d skills/custom ]; then
-  for skill_dir in skills/custom/*; do
-    [ -d "$skill_dir" ] || continue
-    install_codex_skill . "$(basename "$skill_dir")" --from-local
-  done
-else
-  echo "Skipping local custom Codex skills: skills/custom is not present in $(pwd)." >&2
-fi
+# Custom skills maintained in codex-box. Install from GitHub so setup.sh works
+# even when it is curl-executed from another repository checkout.
+install_codex_box_skill() {
+  if [ "$CODEX_BOX_REF" = "HEAD" ]; then
+    install_codex_skill "$CODEX_BOX_REPO" "$1"
+  else
+    install_codex_skill "$CODEX_BOX_REPO" "$1" --pin "$CODEX_BOX_REF"
+  fi
+}
+
+install_codex_box_skill git-safe-change-workflow
+install_codex_box_skill github-pr-lifecycle
+install_codex_box_skill github-actions-rails-ci
+install_codex_box_skill ruby-bundler-maintenance
+install_codex_box_skill ruby-version-upgrade
+install_codex_box_skill rails-maintenance
+install_codex_box_skill rails-db-migration-safety
+install_codex_box_skill rails-test-debugger
