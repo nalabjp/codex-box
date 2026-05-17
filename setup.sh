@@ -76,8 +76,34 @@ bundle config set --global github.com x-access-token:${GITHUB_TOKEN}
 bundle config set path vendor/bundle
 bundle config set without 'production'
 
-# gh
-gh skill install openai/skills skills/.curated/gh-fix-ci --allow-hidden-dirs --agent codex --scope user
+# Codex skills
+# Install OSS and local custom skills at Codex user scope. For Codex this resolves
+# to ~/.codex/skills, keeping skills available across repositories while this
+# repo remains the version-controlled source for custom skill definitions.
+install_codex_skill() {
+  gh skill install "$@" --agent codex --scope user --force
+}
+
+install_codex_skill ComposioHQ/awesome-codex-skills gh-fix-ci
+install_codex_skill ComposioHQ/awesome-codex-skills gh-address-comments
+
+# OpenSite Rails backend skills
+install_codex_skill opensite-ai/opensite-skills rails-query-optimization
+install_codex_skill opensite-ai/opensite-skills rails-zero-downtime-migrations
+install_codex_skill opensite-ai/opensite-skills postgres-performance-engineering
+install_codex_skill opensite-ai/opensite-skills sidekiq-job-patterns
+
+install_codex_skill win4r/goal-prompt-builder goal-prompt-builder
+
+# Local custom skills maintained in this repository.
+if [ -d skills/custom ]; then
+  for skill_dir in skills/custom/*; do
+    [ -d "$skill_dir" ] || continue
+    install_codex_skill . "$(basename "$skill_dir")" --from-local
+  done
+else
+  echo "Skipping local custom Codex skills: skills/custom is not present in $(pwd)." >&2
+fi
 
 cat > /etc/profile.d/github.sh <<EOF
  export GITHUB_TOKEN=${GITHUB_TOKEN}
